@@ -16,7 +16,7 @@ let package = Package(
             targets: ["SwiftfulDataManagersFirebase"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/SwiftfulThinking/SwiftfulDataManagers.git", "2.0.0"..<"3.0.0"),
+        .package(url: "https://github.com/andrewcoyle1/SwiftfulDataManagers.git", "1.0.0"..<"2.0.0"),
         .package(url: "https://github.com/SwiftfulThinking/SwiftfulFirestore.git", "11.0.6"..<"12.0.0"),
     ],
     targets: [

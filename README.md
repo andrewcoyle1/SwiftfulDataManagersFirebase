@@ -57,6 +57,12 @@ let watchlistSyncEngine = CollectionSyncEngine<WatchlistItem>(
     ),
     managerKey: "watchlist"
 )
+
+// CollectionGroupSyncEngine — queries across all subcollections with the same name
+let reviewsSyncEngine = CollectionGroupSyncEngine<Review>(
+    remote: FirebaseRemoteCollectionGroupService(collectionGroupName: "reviews"),
+    managerKey: "reviews"
+)
 ```
 
 ## Example Actions
@@ -80,7 +86,66 @@ let results = try await productsSyncEngine.getDocumentsAsync(buildQuery: { query
     query.where("category", isEqualTo: "electronics")
 })
 productsSyncEngine.stopListening()
+
+// CollectionGroupSyncEngine
+await reviewsSyncEngine.startListening()
+let reviews = reviewsSyncEngine.currentCollection
+let topReviews = try await reviewsSyncEngine.getDocumentsAsync(buildQuery: { query in
+    query.where("rating", isGreaterThanOrEqualTo: 4)
+         .order("createdAt", descending: true)
+         .limit(50)
+})
+reviewsSyncEngine.stopListening()
 ```
+
+## Collection Group Queries
+
+<details>
+<summary> Details (Click to expand) </summary>
+<br>
+
+`FirebaseRemoteCollectionGroupService` queries across **all subcollections** that share the same name, regardless of their parent document. This is useful when you store the same sub-collection type under many different parent documents and need to query them together.
+
+**Example:** if your Firestore structure is:
+
+```
+products/{productId}/reviews/{reviewId}
+posts/{postId}/reviews/{reviewId}
+```
+
+A collection group query on `"reviews"` returns documents from both paths.
+
+### Setup
+
+```swift
+let reviewsSyncEngine = CollectionGroupSyncEngine<Review>(
+    remote: FirebaseRemoteCollectionGroupService(collectionGroupName: "reviews"),
+    managerKey: "all-reviews"
+)
+```
+
+### Firestore index requirement
+
+Collection group queries require a **collection group index** in Firestore. Create one in the Firebase console:
+
+* Firebase Console -> Firestore Database -> Indexes -> Composite -> Add index
+* Set the collection group name and the fields you intend to filter/order on.
+
+### Cursor pagination limitation
+
+Firestore does not support cursor operations (`startAt`, `startAfter`, `endAt`, `endBefore`) on collection group queries unless the query is also ordered by `__name__`. Passing cursor operations without that ordering will cause Firestore to throw at runtime.
+
+### Security rules
+
+Collection group security rules use `match /{path=**}/reviews/{reviewId}` instead of a fixed path:
+
+```javascript
+match /{path=**}/reviews/{reviewId} {
+    allow read: if request.auth != null;
+}
+```
+
+</details>
 
 ## Dynamic Collection Paths
 
@@ -215,7 +280,7 @@ func streamDocument(id: String) -> AsyncThrowingStream<T?, Error>
 
 ### Collection Streaming
 
-FirebaseRemoteCollectionService follows a hybrid pattern used by `CollectionSyncEngine`:
+`FirebaseRemoteCollectionService` follows a hybrid pattern used by `CollectionSyncEngine`:
 
 ```swift
 // 1. Bulk load all documents first
@@ -229,6 +294,23 @@ func streamCollectionUpdates() -> (
 ```
 
 This pattern prevents unnecessary full collection re-fetches and efficiently handles individual document changes.
+
+### Collection Group Streaming
+
+`FirebaseRemoteCollectionGroupService` exposes the same query-scoped streaming API used by `CollectionGroupSyncEngine`:
+
+```swift
+// Fetch once with a filter
+let reviews = try await service.getDocuments(query: query)
+
+// Stream all documents matching a query
+let stream: AsyncThrowingStream<[T], Error> = service.streamCollection(query: query)
+
+// Stream individual changes matching a query
+let (updates, deletions) = service.streamCollectionUpdates(query: query)
+```
+
+All three methods accept a `QueryBuilder` to filter, order, and limit results before they reach Firestore. Only one `streamCollectionUpdates` listener is active at a time — starting a second call before cancelling the first will orphan the previous listener.
 
 </details>
 
